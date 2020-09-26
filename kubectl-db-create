@@ -52,9 +52,11 @@ IFS='' read -r -d '' MY_CNF <<EOF
 user=$DB_USER
 password=$DB_PWD
 database=$DB
+host=cluster1-haproxy.$NAMESPACE
 EOF
 
 kubectl create secret generic -n $NAMESPACE $DB --from-literal=my.cnf="$MY_CNF" && \
+kubectl label secret -n backend db component=db dbms=mysql
 
 MYSQL_PWD=$(secret=$(kubectl get pxc cluster1 -n "$NAMESPACE" -o=jsonpath="{.spec.secretsName}") && kubectl get secret -n "$NAMESPACE" $secret -o=jsonpath={.data.root} | base64 -d) && \
 MYSQL_HOST="cluster1-haproxy.$NAMESPACE" && \
