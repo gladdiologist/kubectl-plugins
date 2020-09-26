@@ -1,0 +1,50 @@
+#!/bin/bash
+
+NAMESPACE=backend
+SIZE=1
+usage() {                                      # Function: Print a help message.
+  echo "Usage: $0 [ -n NAMESPACE ] [ -s SIZE ]" 1>&2
+}
+exit_abnormal() {                              # Function: Exit with error.
+  usage
+  exit 1
+}
+
+while getopts ":n:" options; do
+  case "${options}" in
+    n)
+      NAMESPACE=${OPTARG}
+      ;;
+    s)
+      SIZE=${OPTARG}
+      ;;
+    v)
+      VERSION=${OPTARG}
+      ;;
+    :)
+      echo "Error: -${OPTARG} requires an argument."
+      exit_abnormal
+      ;;
+    *)
+      exit_abnormal
+      ;;
+  esac
+done
+
+# check if percona operator exists...
+if [ -z "$(kubectl get deploy percona-xtradb-cluster-operator -n $NAMESPACE -o=jsonpath={.metadata.name} --ignore-not-found)" ]; then
+  echo "percona xtradb cluster operator does not exists, run kubectl percona operator install -n $NAMESPACE"
+else
+  # check if percona cluster exists...
+  VERSION=$(kubectl get deploy -n backend percona-xtradb-cluster-operator --ignore-not-found -o=jsonpath="{.spec.template.spec.containers[*].image}" | cut -d ':' -f 2)
+  if [ "$(kubectl get pxc -n $NAMESPACE 2> /dev/null | wc -l)" -eq "0" ]; then
+    echo "creating percona xtradb cluster..."
+    curl -s https://raw.githubusercontent.com/percona/percona-xtradb-cluster-operator/v$VERSION/deploy/cr.yaml | \
+    sed -e 's/#    - delete-pxc-pvc/    - delete-pxc-pvc/g' \
+        -e 's/  allowUnsafeConfigurations: false/  allowUnsafeConfigurations: true/g' \
+        -e "s/    size: 3/    size: $SIZE/g" | \
+    kubectl -n $NAMESPACE apply -f -
+  else
+    echo "percona xtradb cluster already exists!"
+  fi
+fi
