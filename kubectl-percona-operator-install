@@ -1,0 +1,46 @@
+#!/bin/bash
+
+NAMESPACE=backend
+DEFAULT_VERSION="1.5.0"
+usage() {                                      # Function: Print a help message.
+  echo "Usage: $0 [ -n NAMESPACE ] [ -v VERSION ]" 1>&2
+}
+exit_abnormal() {                              # Function: Exit with error.
+  usage
+  exit 1
+}
+
+while getopts ":n:v:" options; do
+  case "${options}" in
+    n)
+      NAMESPACE=${OPTARG}
+      ;;
+    v)
+      VERSION=${OPTARG}
+      ;;
+    :)
+      echo "Error: -${OPTARG} requires an argument."
+      exit_abnormal
+      ;;
+    *)
+      exit_abnormal
+      ;;
+  esac
+done
+
+[ -z "$VERSION" ] && VERSION=$DEFAULT_VERSION
+
+if [ -z "$(kubectl get ns $NAMESPACE -o=jsonpath="{.metadata.name}" --ignore-not-found)" ]; then
+  echo creating $NAMESPACE...
+  kubectl create ns $NAMESPACE
+  kubectl -n $NAMESPACE apply -f "https://raw.githubusercontent.com/percona/percona-xtradb-cluster-operator/v$VERSION/deploy/bundle.yaml"
+else
+  echo $NAMESPACE already exists, skipping namespace creation!
+  CURRENT_VERSION=$(kubectl get deploy -n backend percona-xtradb-cluster-operator --ignore-not-found -o=jsonpath="{.spec.template.spec.containers[*].image}" | cut -d ':' -f 2)
+  if [ -z "$CURRENT_VERSION" ] || [ "$CURRENT_VERSION" != "$VERSION" ]; then
+    echo deploying percona xtradb operator version $VERSION...
+    kubectl -n $NAMESPACE apply -f "https://raw.githubusercontent.com/percona/percona-xtradb-cluster-operator/v$VERSION/deploy/bundle.yaml"
+  else
+    echo "percona xtradb operator $VERSION already exists in this namespace!"
+  fi
+fi

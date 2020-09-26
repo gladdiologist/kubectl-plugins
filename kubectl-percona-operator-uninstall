@@ -1,0 +1,30 @@
+#!/bin/bash
+
+NAMESPACE=backend
+usage() {                                      # Function: Print a help message.
+  echo "Usage: $0 [ -n NAMESPACE ]" 1>&2
+}
+exit_abnormal() {                              # Function: Exit with error.
+  usage
+  exit 1
+}
+
+while getopts ":n:v:" options; do
+  case "${options}" in
+    n)
+      NAMESPACE=${OPTARG}
+      ;;
+    :)
+      echo "Error: -${OPTARG} requires an argument."
+      exit_abnormal
+      ;;
+    *)
+      exit_abnormal
+      ;;
+  esac
+done
+
+echo "delete namespace resources..."
+kubectl get deployments,rolebinding,role,serviceaccount -n $NAMESPACE -o name | grep percona | xargs -I {} kubectl -n $NAMESPACE delete {}
+echo "delete crds..."
+kubectl get crd -o name | grep percona | xargs -I {} kubectl delete {}
