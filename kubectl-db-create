@@ -1,0 +1,67 @@
+#!/bin/bash
+
+NAMESPACE=backend
+DB=""
+DB_USER=""
+DB_PWD=""
+
+usage() {                                      # Function: Print a help message.
+  echo "Usage: $0 [ -n NAMESPACE ] -d DB [ -u USER ] [ -p PASSWORD ]" 1>&2
+}
+exit_abnormal() {                              # Function: Exit with error.
+  usage
+  exit 1
+}
+random_password() {
+  DB_PWD=$(< /dev/urandom tr -dc _A-Z-a-z-0-9 | head -c${1:-32};echo;)
+}
+
+while getopts ":n:d:" options; do
+  case "${options}" in
+    n)
+      NAMESPACE=${OPTARG}
+      ;;
+    d)
+      DB=${OPTARG}
+      ;;
+    u)
+      DB_USER=${OPTARG}
+      ;;
+    p)
+      DB_PWD=${OPTARG}
+      ;;
+    :)
+      echo "Error: -${OPTARG} requires an argument."
+      exit_abnormal
+      ;;
+    *)
+      exit_abnormal
+      ;;
+  esac
+done
+
+
+[ -z "$DB" ] && exit_abnormal
+
+[ -z "$DB_USER" ] && DB_USER="$DB"
+
+[ -z "$DB_PWD" ] && random_password
+
+IFS='' read -r -d '' MY_CNF <<EOF
+[client]
+user=$DB_USER
+password=$DB_PWD
+database=$DB
+EOF
+
+kubectl create secret generic -n $NAMESPACE $DB --from-literal=my.cnf="$MY_CNF" && \
+
+MYSQL_PWD=$(secret=$(kubectl get pxc cluster1 -n "$NAMESPACE" -o=jsonpath="{.spec.secretsName}") && kubectl get secret -n "$NAMESPACE" $secret -o=jsonpath={.data.root} | base64 -d) && \
+MYSQL_HOST="cluster1-haproxy.$NAMESPACE" && \
+cat <<END | mysql
+CREATE DATABASE IF NOT EXISTS $DB;
+CREATE USER '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PWD';
+GRANT ALL PRIVILEGES ON $DB.* TO '$DB_USER'@'localhost';
+FLUSH PRIVILEGES;
+END
+
