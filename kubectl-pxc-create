@@ -18,9 +18,6 @@ while getopts ":n:" options; do
     s)
       SIZE=${OPTARG}
       ;;
-    v)
-      VERSION=${OPTARG}
-      ;;
     :)
       echo "Error: -${OPTARG} requires an argument."
       exit_abnormal
