@@ -12,6 +12,10 @@ exit_abnormal() {                              # Function: Exit with error.
   usage
   exit 1
 }
+exit_no_pxc() {
+  echo "No percona xtradb cluster is running...run kubectl pxc create"
+  exit 1
+}
 random_password() {
   DB_PWD=$(< /dev/urandom tr -dc _A-Z-a-z-0-9 | head -c${1:-32};echo;)
 }
@@ -41,6 +45,9 @@ while getopts ":n:d:" options; do
   esac
 done
 
+PXC=$(kubectl get pxc cluster1 -n backend -o name 2> /dev/null)
+
+[ -z "$PXC" ] && exit_no_pxc
 
 [ -z "$DB" ] && exit_abnormal
 

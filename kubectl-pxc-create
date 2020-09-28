@@ -41,6 +41,7 @@ else
         -e 's/  allowUnsafeConfigurations: false/  allowUnsafeConfigurations: true/g' \
         -e "s/    size: 3/    size: $SIZE/g" | \
     kubectl -n $NAMESPACE apply -f -
+    kubectl wait pod -n $NAMESPACE -l app.kubernetes.io/component=pxc,app.kubernetes.io/instance=cluster1 --for=condition=ready
   else
     echo "percona xtradb cluster already exists!"
   fi
