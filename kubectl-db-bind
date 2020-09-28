@@ -1,0 +1,74 @@
+#!/bin/bash
+
+BACKEND_NAMESPACE="backend"
+NAMESPACE="default"
+DB=""
+APP=""
+
+usage() {                                      # Function: Print a help message.
+  echo "Usage: $0 [ -n NAMESPACE ] [ -b BACKEND_NAMESPACE ] -d DB -a APP" 1>&2
+}
+exit_abnormal() {                              # Function: Exit with error.
+  usage
+  exit 1
+}
+random_password() {
+  DB_PWD=$(< /dev/urandom tr -dc _A-Z-a-z-0-9 | head -c${1:-32};echo;)
+}
+
+while getopts ":n:d:a:b:" options; do
+  case "${options}" in
+    n)
+      NAMESPACE=${OPTARG}
+      ;;
+    b)
+      BACKEND_NAMESPACE=${OPTARG}
+      ;;
+    d)
+      DB=$(echo ${OPTARG} | sed -e s/-/_/g)
+      SECRET=$(echo ${OPTARG} | sed -e s/_/-/g)
+      ;;
+    a)
+      APP=$(echo ${OPTARG} | sed -e s/_/-/g)
+      ;;
+    :)
+      echo "Error: -${OPTARG} requires an argument."
+      exit_abnormal
+      ;;
+    *)
+      exit_abnormal
+      ;;
+  esac
+done
+
+
+[ -z "$DB" ] && exit_abnormal
+
+[ -z "$APP" ] && exit_abnormal
+
+# find db! fails if does not exists!
+echo "searching db $DB in $BACKEND_NAMESPACE..."
+kubectl db -n $BACKEND_NAMESPACE -d $DB || exit 1
+echo "generating password..."
+random_password
+
+IFS='' read -r -d '' MY_CNF <<EOF
+[client]
+user=$APP
+password=$DB_PWD
+database=$DB
+host=cluster1-haproxy.$BACKEND_NAMESPACE
+EOF
+
+
+echo "binding $APP to $DB..."
+kubectl create secret generic -n $NAMESPACE "$SECRET-$APP" --from-literal=my.cnf="$MY_CNF" && \
+kubectl label secret -n $NAMESPACE "$SECRET-$APP" instance=$DB app=$APP component=binding
+
+MYSQL_PWD=$(secret=$(kubectl get pxc cluster1 -n "$BACKEND_NAMESPACE" -o=jsonpath="{.spec.secretsName}") && kubectl get secret -n "$BACKEND_NAMESPACE" $secret -o=jsonpath={.data.root} | base64 -d) && \
+MYSQL_HOST="cluster1-haproxy.$BACKEND_NAMESPACE" && \
+cat <<END | mysql -h$MYSQL_HOST -p$MYSQL_PWD -uroot
+CREATE USER '$APP'@'%' IDENTIFIED BY '$DB_PWD';
+GRANT ALL PRIVILEGES ON $DB.* TO '$APP'@'%';
+FLUSH PRIVILEGES;
+END

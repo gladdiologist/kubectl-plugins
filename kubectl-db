@@ -1,0 +1,34 @@
+#!/bin/bash
+
+NAMESPACE=backend
+
+usage() {                                      # Function: Print a help message.
+  echo "Usage: $0 [ -n NAMESPACE ] -d DB" 1>&2
+}
+exit_abnormal() {                              # Function: Exit with error.
+  usage
+  exit 1
+}
+
+while getopts ":n:d:" options; do
+  case "${options}" in
+    n)
+      NAMESPACE=${OPTARG}
+      ;;
+    d)
+      DB=$(echo ${OPTARG} | sed -e s/-/_/g)
+      SECRET=$(echo ${OPTARG} | sed -e s/_/-/g)
+      ;;
+    :)
+      echo "Error: -${OPTARG} requires an argument."
+      exit_abnormal
+      ;;
+    *)
+      exit_abnormal
+      ;;
+  esac
+done
+
+[ -z "$DB" ] && exit_abnormal
+
+kubectl get secret -n $NAMESPACE $SECRET --ignore-not-found -o custom-columns=NAME:.metadata.name,SERVICE:.metadata.labels.service,PLAN:.metadata.labels.plan,BROKER:.metadata.labels.broker

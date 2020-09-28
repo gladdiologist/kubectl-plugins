@@ -1,0 +1,13 @@
+#!/bin/bash
+
+NAMESPACE=backend
+
+usage() {                                      # Function: Print a help message.
+  echo "Usage: $0 [ -n NAMESPACE ]" 1>&2
+}
+exit_abnormal() {                              # Function: Exit with error.
+  usage
+  exit 1
+}
+
+kubectl get secret -n $NAMESPACE -l component=service -o custom-columns=NAME:.metadata.labels.name,SERVICE:.metadata.labels.service,PLAN:.metadata.labels.plan,BROKER:.metadata.labels.broker

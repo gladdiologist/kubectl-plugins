@@ -2,18 +2,13 @@
 
 NAMESPACE=backend
 DB=""
-DB_USER=""
-DB_PWD=""
 
 usage() {                                      # Function: Print a help message.
-  echo "Usage: $0 [ -n NAMESPACE ] -d DB [ -u USER ] [ -p PASSWORD ]" 1>&2
+  echo "Usage: $0 [ -n NAMESPACE ] -d DB" 1>&2
 }
 exit_abnormal() {                              # Function: Exit with error.
   usage
   exit 1
-}
-random_password() {
-  DB_PWD=$(< /dev/urandom tr -dc _A-Z-a-z-0-9 | head -c${1:-32};echo;)
 }
 
 while getopts ":n:d:" options; do
@@ -24,12 +19,6 @@ while getopts ":n:d:" options; do
     d)
       DB=$(echo ${OPTARG} | sed -e s/-/_/g)
       SECRET=$(echo ${OPTARG} | sed -e s/_/-/g)
-      ;;
-    u)
-      DB_USER=${OPTARG}
-      ;;
-    p)
-      DB_PWD=${OPTARG}
       ;;
     :)
       echo "Error: -${OPTARG} requires an argument."
@@ -44,26 +33,17 @@ done
 
 [ -z "$DB" ] && exit_abnormal
 
-[ -z "$DB_USER" ] && DB_USER="$DB"
-
-[ -z "$DB_PWD" ] && random_password
-
-IFS='' read -r -d '' MY_CNF <<EOF
-[client]
-user=$DB_USER
-password=$DB_PWD
-database=$DB
-host=cluster1-haproxy.$NAMESPACE
-EOF
-
-kubectl create secret generic -n $NAMESPACE $SECRET --from-literal=my.cnf="$MY_CNF" && \
-kubectl label secret -n $NAMESPACE $SECRET service=mysql plan=local broker=pxc component=service name=$DB
-echo "creating $DB database..."
+echo "searching binding for $DB..."
+DROP_USER=$(kubectl get secret -A -l instance=$DB --no-headers -o custom-columns="NAME:.metadata.labels.app" | xargs -I {} echo "DROP USER IF EXISTS '{}'@'%';")
+echo "deleting secrets..."
+kubectl delete secret -A -l instance=$DB
+echo "deleting $DB database..."
 MYSQL_PWD=$(secret=$(kubectl get pxc cluster1 -n "$NAMESPACE" -o=jsonpath="{.spec.secretsName}") && kubectl get secret -n "$NAMESPACE" $secret -o=jsonpath={.data.root} | base64 -d) && \
 MYSQL_HOST="cluster1-haproxy.$NAMESPACE" && \
 cat <<END | mysql -h$MYSQL_HOST -p$MYSQL_PWD -uroot
-CREATE DATABASE IF NOT EXISTS $DB;
-CREATE USER '$DB_USER'@'%' IDENTIFIED BY '$DB_PWD';
-GRANT ALL PRIVILEGES ON $DB.* TO '$DB_USER'@'%';
-FLUSH PRIVILEGES;
+$DROP_USER
+DROP USER IF EXISTS '$DB'@'%';
+DROP DATABASE IF EXISTS $DB;
 END
+echo "deleting secret $SECRET..."
+kubectl delete secret -n $NAMESPACE $SECRET
